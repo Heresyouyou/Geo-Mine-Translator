@@ -1,0 +1,65 @@
+﻿[
+    {
+        "Path":  "D:\\models\\.lock",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\.lock",
+        "SizeMB":  0,
+        "Reason":  "旧 transformers 模型, 已迁移到 llama.cpp GGUF",
+        "ArchivedOn":  "2026-09-09"
+    },
+    {
+        "Path":  "D:\\models\\.locks",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\.locks",
+        "SizeMB":  0,
+        "Reason":  "旧 transformers 模型, 已迁移到 llama.cpp GGUF",
+        "ArchivedOn":  "2026-09-09"
+    },
+    {
+        "Path":  "D:\\models\\models",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\models",
+        "SizeMB":  90904.2,
+        "Reason":  "旧 transformers 模型, 已迁移到 llama.cpp GGUF",
+        "ArchivedOn":  "2026-09-09"
+    },
+    {
+        "Path":  "D:\\models\\models--Qwen--Qwen3.5-9B",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\models--Qwen--Qwen3.5-9B",
+        "SizeMB":  4.1,
+        "Reason":  "旧 transformers 模型, 已迁移到 llama.cpp GGUF",
+        "ArchivedOn":  "2026-09-09"
+    },
+    {
+        "Path":  "D:\\models\\Qwen3.5-4B-AWQ",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\Qwen3.5-4B-AWQ",
+        "SizeMB":  0,
+        "Reason":  "旧 transformers 模型, 已迁移到 llama.cpp GGUF",
+        "ArchivedOn":  "2026-09-09"
+    },
+    {
+        "Path":  "D:\\models\\Qwen3.5-4B-decompressed",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\Qwen3.5-4B-decompressed",
+        "SizeMB":  8241.3,
+        "Reason":  "旧 transformers 模型, 已迁移到 llama.cpp GGUF",
+        "ArchivedOn":  "2026-09-09"
+    },
+    {
+        "Path":  "D:\\models\\_test",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\_test",
+        "SizeMB":  0,
+        "Reason":  "旧 transformers 模型, 已迁移到 llama.cpp GGUF",
+        "ArchivedOn":  "2026-09-09"
+    },
+    {
+        "Path":  "D:\\PostNews\\Translate\\models\\Qwen2.5-7B-Instruct",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\transformers_safetensors\\Qwen2.5-7B-Instruct",
+        "SizeMB":  14536.7,
+        "Reason":  "transformers safetensors, 用 GGUF 替代",
+        "ArchivedOn":  "2026-09-09"
+    },
+    {
+        "Path":  "D:\\PostNews\\Translate\\models-gguf\\Qwen3.5-0.8B-Q4_K_M.gguf",
+        "Target":  "Y:\\model_warehouse\\archived_2026-09-09\\Qwen3.5-0.8B-Q4_K_M.gguf",
+        "SizeMB":  507.8,
+        "Reason":  "轻量 fallback 模型, 主力已稳定, 留作应急",
+        "ArchivedOn":  "2026-09-09"
+    }
+]

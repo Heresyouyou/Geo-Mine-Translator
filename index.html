@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoTranslate · 地学论文双栏翻译 v4</title>
+
+<style>
+  :root {
+    --bg: #2b2b2b; --surface: #1f1f1f; --surface-2: #262626;
+    --border: #3a3a3a; --text: #e8e4df; --muted: #8a867f;
+    --accent: #4a9e6a; --accent-dim: #2d6e46; --warn: #f0a030;
+    --radius: 6px; --topbar-h: 48px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); }
+
+  /* ── 顶栏 ── */
+  header {
+    height: var(--topbar-h); background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 16px; gap: 14px; flex-shrink: 0;
+  }
+  .brand { font-weight: 600; font-size: 14px; letter-spacing: -0.3px; }
+  .brand small { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: 11px; }
+  .spacer { flex: 1; }
+  .file-chip { display: none; align-items: center; gap: 8px;
+    padding: 4px 12px; border-radius: 4px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    font-size: 12px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-chip.show { display: inline-flex; }
+  .file-chip .close { cursor: pointer; color: var(--muted); font-size: 14px; margin-left: 4px; }
+  .file-chip .close:hover { color: #e88; }
+  .action-btn { padding: 5px 14px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); cursor: pointer;
+    font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .action-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .download-opts { display: inline-flex; align-items: center; gap: 8px; }
+  .download-opts.hidden { display: none; }
+  .dl-radio { font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.dl-radio input { accent-color: var(--accent); }
+  .upload-btn { padding: 5px 14px; border-radius: 4px; border: none;
+    background: var(--accent); color: #fff; cursor: pointer; font-size: 12px; }
+  .upload-btn:hover { background: var(--accent-dim); }
+  .upload-btn input { display: none; }
+
+  /* ── 双栏主体 ── */
+  .app { position: absolute; inset: var(--topbar-h) 0 0 0; display: flex; }
+  .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .pane.en { border-right: 1px solid var(--border); }
+  .pane-head { height: 36px; display: flex; align-items: center; padding: 0 14px;
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--muted); letter-spacing: 0.5px; flex-shrink: 0; }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); margin-right: 8px; }
+  .pane-head .status { margin-left: auto; font-size: 11px; }
+
+  /* ── 空态 ── */
+  .empty { flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px; color: var(--muted);
+    border: 2px dashed var(--border); margin: 16px; border-radius: var(--radius);
+    cursor: pointer; transition: all .2s; }
+  .empty:hover, .empty.drag { border-color: var(--accent); background: rgba(74,158,106,0.06); }
+  .empty .big-icon { font-size: 40px; opacity: 0.5; }
+  .empty .title { font-size: 14px; color: var(--text); }
+  .empty .hint { font-size: 11px; }
+  .hidden { display: none !important; }
+
+  /* ── 阅读区 ── */
+  .scroll { flex: 1; overflow: auto; background: #1a1a1a;
+    scrollbar-width: thin; scrollbar-color: #444 #222; }
+  .scroll::-webkit-scrollbar { width: 10px; }
+  .scroll::-webkit-scrollbar-track { background: #222; }
+  .scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 5px; }
+  .scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+  .scroll canvas { display: block; margin: 0 auto 12px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
+    background: #fff; border-radius: 2px;
+    transition: box-shadow .2s; }
+  
+  /* iframe 原生 PDF 渲染 (替代实时 pdf.js canvas) */
+  .pdf-frame {
+    flex: 1;
+    width: 100%;
+    border: none;
+    background: #fff;
+    overflow: hidden;
+    display: block;
+  }
+  .pdf-frame.hidden { display: none !important; }
+  .scroll canvas:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.7), 0 0 0 1px rgba(74,158,106,0.15); }
+  .page-bar { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.82); color: #ddd;
+    padding: 4px 8px; border-radius: 14px; font-size: 11px;
+    pointer-events: auto; display: flex; align-items: center; gap: 6px; }
+  .page-bar button {
+    background: none; border: 1px solid #555; color: #ddd;
+    width: 22px; height: 22px; border-radius: 50%;
+    cursor: pointer; font-size: 11px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .page-bar button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .page-bar button:disabled { opacity: 0.3; cursor: default; }
+  .page-bar .pg-num { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+    backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.06);
+    font-variant-numeric: tabular-nums; letter-spacing: 0.3px; }
+  .pane-head .zoom { display: inline-flex; align-items: center; gap: 2px;
+    margin-left: 10px; }
+  .pane-head .zoom button { background: transparent; border: 1px solid var(--border);
+    color: var(--muted); width: 22px; height: 22px; border-radius: 3px;
+    cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;
+    padding: 0; line-height: 1; }
+  .pane-head .zoom button:hover { border-color: var(--accent); color: var(--accent); }
+  .pane-head .zoom .pct { font-size: 11px; color: var(--muted); width: 36px; text-align: center;
+    font-variant-numeric: tabular-nums; }
+
+  /* 分割线 */
+  .divider { width: 4px; background: var(--border); cursor: col-resize; flex-shrink: 0;
+    transition: background .15s; }
+  .divider:hover, .divider.active { background: var(--accent); }
+
+  /* 虚拟滚动占位 */
+  .page-phantom { visibility: hidden; }
+  .page-wrap { position: relative; }
+  .page-wrap.loading::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+    animation: shimmer 1.5s infinite; pointer-events: none;
+  }
+  @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+
+  /* ── 右侧翻译中 ── */
+    .loading-wrap { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(20,20,28,0.95); backdrop-filter: blur(8px);
+    border-radius: 14px; padding: 18px 24px 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 100;
+    display: flex; flex-direction: column; align-items: stretch; gap: 10px; min-width: 280px; max-width: 360px; }
+  .progress-ring { width: 72px; height: 72px; }
+  .progress-ring circle { stroke-dasharray: 201.1; stroke-dashoffset: 201.1;
+    transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset .4s; }
+  .progress-ring .bg { stroke: var(--border); }
+  .progress-ring .fg { stroke: var(--accent); stroke-linecap: round; }
+  .progress-ring.queued .fg { animation: queue-spin 1.2s linear infinite; stroke-dashoffset: 0; }
+  @keyframes queue-spin { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+
+  /* 多阶段进度条 */
+  .stage-bars { display: flex; flex-direction: column; gap: 5px; width: 100%; margin-top: 4px; }
+  .stage-bar-row { display: flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1.2; }
+  .stage-bar-row .s-name { width: 36px; color: #888; flex-shrink: 0; font-weight: 500; }
+  .stage-bar-row .s-bar { flex: 1; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+  .stage-bar-row .s-fill { height: 100%; border-radius: 2px; transition: width .25s cubic-bezier(.4,0,.2,1); background: rgba(255,255,255,0.12); }
+  .stage-bar-row.active .s-fill { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .stage-bar-row.done .s-fill { background: #4CAF50; }
+  .stage-bar-row.active .s-name { color: var(--accent); }
+  .stage-bar-row.done .s-name { color: #4CAF50; }
+  .stage-bar-row .s-pct { width: 30px; text-align: right; font-variant-numeric: tabular-nums; color: #666; font-size: 10px; }
+  .stage-bar-row.active .s-pct { color: var(--accent); }
+  .stage-bar-row.done .s-pct { color: #4CAF50; }
+  .stage-bar-row.done .s-name::after { content: ' ✓'; font-size: 10px; }
+  .pct-num { font-size: 26px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .load-msg { font-size: 12px; color: var(--muted); max-width: 280px; text-align: center; }
+
+  /* 上传进度 */
+  .upload-bar { width: 200px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .upload-bar > div { height: 100%; background: var(--accent); transition: width .2s; }
+
+  /* 网络断线提示 */
+  .net-alert { position: fixed; top: var(--topbar-h); left: 50%; transform: translateX(-50%);
+    background: #a04040; color: #fff; padding: 6px 16px; border-radius: 20px;
+    font-size: 12px; z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .net-alert.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+
+<header>
+  <span class="brand">GeoTranslate<small>v4 · 按需渲染 + 鲁棒轮询</small></span>
+  <span class="spacer"></span>
+  <span class="file-chip" id="fileChip">📄 <span id="chipName"></span><span class="close" id="chipClose">✕</span></span>
+  <span id="downloadOpts" class="download-opts hidden">
+    <label class="dl-radio"><input type="radio" name="dlFmt" value="mono"> 中文版</label>
+<label class="dl-radio"><input type="radio" name="dlFmt" value="dual" checked> 双语对照</label>
+<label class="dl-radio"><input type="radio" name="dlFmt" value="both"> 两者都要</label>
+    <button class="action-btn" id="downloadBtn">⬇ 下载</button>
+  </span>
+  <label class="upload-btn">📄 选择 PDF<input type="file" id="fileInput" accept=".pdf"></label>
+</header>
+
+<div class="net-alert" id="netAlert">网络离线 · 等待重连...</div>
+
+<div class="app">
+  <!-- 左: 英文原文 -->
+  <div class="pane en" id="leftPane">
+    <div class="pane-head">
+      <span class="dot"></span>原文 · EN
+      <span class="zoom">
+        <button id="zoomLeftOut" title="缩小 (-)">−</button>
+        <span class="pct" id="leftZoom">140%</span>
+        <button id="zoomLeftIn" title="放大 (+)">+</button>
+        <button id="zoomLeftReset" title="重置 (0)">↺</button>
+      </span>
+      <span class="status" id="leftStatus"></span>
+    </div>
+    <div class="empty" id="leftEmpty">
+      <div class="big-icon">📄</div>
+      <div class="title">拖入 PDF 或点击这里选择</div>
+      <div class="hint">自动检测缓存 · 本地翻译 · 支持批量</div>
+    </div>
+    <!-- iframe 原生 PDF 渲染: 稳定 + 浏览器缓存 + 自带缩放/搜索 -->
+    <iframe id="leftFrame" class="pdf-frame hidden" title="原文 PDF"></iframe><!-- 保留兼容, 不再用于渲染 -->
+    <div class="page-bar" id="leftPageBar"><button id="leftPrev" title="上一页">‹</button><span class="pg-num" id="leftPage">— / —</span><button id="leftNext" title="下一页">›</button></div>
+  </div>
+
+  <!-- 分割线 (可拖拽调左右宽度) -->
+  <div class="divider" id="divider"></div>
+
+  <!-- 右: 中文译文 -->
+  <div class="pane zh" id="rightPane">
+    <div class="pane-head">
+      <span class="dot" id="rightDot" style="background: var(--muted)"></span>译文 · ZH
+      <span class="zoom">
+        <button id="zoomRightOut" title="缩小 (-)">−</button>
+        <span class="pct" id="rightZoom">140%</span>
+        <button id="zoomRightIn" title="放大 (+)">+</button>
+        <button id="zoomRightReset" title="重置 (0)">↺</button>
+      </span>
+      <span class="status" id="rightStatus"></span>
+    </div>
+    <div class="empty" id="rightEmpty" style="cursor:default">
+      <div class="big-icon">🀄</div>
+      <div class="title" style="color:var(--muted)">等待左侧上传</div>
+      <div class="hint">翻译完成后自动显示在这里</div>
+    </div>
+    <div class="loading-wrap hidden" id="loadingWrap">
+      <div style="display:flex; align-items:center; gap:16px; width:100%;">
+        <svg class="progress-ring" viewBox="0 0 72 72">
+          <circle class="bg" cx="36" cy="36" r="32" stroke-width="5" fill="none"/>
+          <circle class="fg" cx="36" cy="36" r="32" stroke-width="5" fill="none"/>
+        </svg>
+        <div style="flex:1; min-width:0;">
+          <div class="pct-num" id="pctNum" style="font-size:22px;">0%</div>
+          <div class="load-msg" id="loadMsg" style="font-size:11px;">加载翻译模型...</div>
+        </div>
+      </div>
+      <div class="stage-bars" id="stageBars">
+        <div class="stage-bar-row" data-stage="parse">
+          <span class="s-name">解析</span><div class="s-bar"><div class="s-fill"></div></div><span class="s-pct">0%</span>
+        </div>
+        <div class="stage-bar-row" data-stage="translate">
+          <span class="s-name">翻译</span><div class="s-bar"><div class="s-fill"></div></div><span class="s-pct">0%</span>
+        </div>
+        <div class="stage-bar-row" data-stage="typeset">
+          <span class="s-name">排版</span><div class="s-bar"><div class="s-fill"></div></div><span class="s-pct">0%</span>
+        </div>
+        <div class="stage-bar-row" data-stage="output">
+          <span class="s-name">输出</span><div class="s-bar"><div class="s-fill"></div></div><span class="s-pct">0%</span>
+        </div>
+      </div>
+      <div class="upload-bar hidden" id="uploadBar"><div id="uploadFill" style="width:0%"></div></div>
+    </div>
+    <!-- iframe 原生 PDF 渲染 -->
+    <iframe id="rightFrame" class="pdf-frame hidden" title="译文 PDF"></iframe><!-- 保留兼容 -->
+    <div class="page-bar" id="rightPageBar"><button id="rightPrev" title="上一页">‹</button><span class="pg-num" id="rightPage">— / —</span><button id="rightNext" title="下一页">›</button></div>
+  </div>
+</div>
+
+
+
+<script>
+// ═══════════════════════════════════════════════
+//  GeoTranslate — 原生 iframe PDF + postMessage 同步
+// ═══════════════════════════════════════════════
+
+const $ = id => document.getElementById(id);
+const S = {
+    iframeZoom: 140,
+    currentName: null,
+    currentJobId: null,
+    currentMonoUrl: null,
+    currentDualUrl: null,
+    pollingCtrl: null,
+};
+
+const input = $('fileInput');
+const chip = $('fileChip');
+const chipName = $('chipName');
+const chipClose = $('chipClose');
+const downloadOpts = $('downloadOpts');
+const downloadBtn = $('downloadBtn');
+const leftEmpty = $('leftEmpty');
+const leftFrame = $('leftFrame');
+const leftStatus = $('leftStatus');
+const leftPage = $('leftPage');
+const rightEmpty = $('rightEmpty');
+const rightDot = $('rightDot');
+const loadingWrap = $('loadingWrap');
+const rightFrame = $('rightFrame');
+const rightStatus = $('rightStatus');
+const rightPage = $('rightPage');
+const pctNum = $('pctNum');
+const loadMsg = $('loadMsg');
+const uploadBar = $('uploadBar');
+const uploadFill = $('uploadFill');
+const leftZoom = $('leftZoom');
+const rightZoom = $('rightZoom');
+
+// ═══════════════════════════════════════════════════════════════
+//  GeoTranslate — Chromium PDF iframe 双向实时同步
+//  方案: postMessage (Chromium PDF viewer 原生协议) 优先 + hash 兜底
+//  Chromium PDF viewer postMessage 协议 (公开):
+//    父→iframe: {type:'setZoom', zoom:number} | {type:'goToPage', page:number} | {type:'zoomIn'} | {type:'zoomOut'}
+//    iframe→父: {type:'update', zoom, page, numPages, scrollX, scrollY, ...}
+// ═══════════════════════════════════════════════════════════════
+
+// ── 状态 (追踪两边的 scroll/page/zoom, 用于同步决策) ──
+const V = {
+    left:  { page: 1, scrollX: 0, scrollY: 0, zoom: 1, numPages: 0, ready: false },
+    right: { page: 1, scrollX: 0, scrollY: 0, zoom: 1, numPages: 0, ready: false },
+    master: 'left',   // 哪边是主 (用户正在操作的那边)
+    lockUntil: 0,     // 同步锁, 防止递归
+    usingPostMessage: true,  // 检测 Chromium 后会确认
+};
+
+// ── Chromium PDF viewer 消息发送 (带失败检测, 3 次失败后回退 hash) ──
+let _pmFailures = 0;
+function _sendPdfCmd(frame, cmd) {
+    if (!frame?.src || frame.src === 'about:blank') return;
+    if (!V.usingPostMessage) return _hashFallback(cmd);
+    try {
+        frame.contentWindow.postMessage(cmd, '*');
+    } catch(e) {
+        _pmFailures++;
+        if (_pmFailures > 3) { V.usingPostMessage = false; console.warn('[PDF] postMessage disabled, using hash fallback'); }
+    }
+}
+
+function _hashFallback(cmd) {
+    // hash 方式兜底, 只支持 page/zoom, 不支持 scroll
+    const frame = V.master === 'left' ? leftFrame : rightFrame;
+    if (!frame.src) return;
+    const base = frame.src.split('#')[0];
+    let page = 1, zoom = 'FitW';
+    const m = frame.src.match(/#page=(\d+)&zoom=([^&]*)/);
+    if (m) { page = m[1]; zoom = m[2]; }
+    if (cmd.type === 'goToPage') page = cmd.page;
+    if (cmd.type === 'setZoom') {
+        const z = cmd.zoom;
+        zoom = (z >= 2 ? '2' : z >= 1.5 ? '1.5' : z >= 1 ? '1' : z >= 0.75 ? '0.75' : '0.5');
+    }
+    frame.src = `${base}#page=${page}&zoom=${zoom}&pagemode=none`;
+}
+
+// ── 发命令到 iframe ──
+function pdfGoToPage(frame, page) {
+    _sendPdfCmd(frame, { type: 'goToPage', page });
+}
+function pdfSetZoom(frame, zoom) {
+    _sendPdfCmd(frame, { type: 'setZoom', zoom });
+}
+function pdfZoomIn(frame)  { _sendPdfCmd(frame, { type: 'zoomIn' }); }
+function pdfZoomOut(frame) { _sendPdfCmd(frame, { type: 'zoomOut' }); }
+
+// ── 父页面监听 iframe 发的 update 消息 ──
+window.addEventListener('message', (e) => {
+    const data = e.data;
+    if (!data || typeof data !== 'object' || !data.type) return;
+
+    // Chromium PDF viewer 的 update 消息
+    if (data.type === 'update') {
+        // 找到发消息的 iframe (parent/window 关系)
+        let which = null;
+        if (e.source === leftFrame?.contentWindow) which = 'left';
+        else if (e.source === rightFrame?.contentWindow) which = 'right';
+        if (!which) return;
+
+        V.usingPostMessage = true;  // 收到消息, 确认可用
+        _pmFailures = 0;
+
+        // 更新状态
+        const st = V[which];
+        st.page = data.page ?? st.page;
+        st.scrollX = data.scrollX ?? st.scrollX;
+        st.scrollY = data.scrollY ?? st.scrollY;
+        st.zoom = data.zoom ?? st.zoom;
+        st.numPages = data.numPages ?? st.numPages;
+        st.ready = true;
+
+        // 更新页码显示
+        const other = which === 'left' ? 'right' : 'left';
+        const myFrame = which === 'left' ? leftFrame : rightFrame;
+        const otherFrame = which === 'left' ? rightFrame : leftFrame;
+        const pageEl = which === 'left' ? leftPage : rightPage;
+        const total = st.numPages > 0 ? st.numPages : '—';
+        pageEl.textContent = `${st.page} / ${total}`;
+
+        // 更新 zoom 显示 (Chromium 发的是小数: 1=100%, 1.5=150%)
+        const pct = Math.round((st.zoom || 1) * 100);
+        leftZoom.textContent = pct + '%';
+        rightZoom.textContent = pct + '%';
+
+        // ═══ 核心: 双向同步 ═══
+        // 如果是用户操作 (master=which), 同步到另一边
+        if (V.master === which && st.ready && Date.now() > V.lockUntil) {
+            const otherSt = V[other];
+            const otherReady = otherSt.ready;
+            if (!otherReady) return;  // 对方还没准备好
+
+            // 1. 翻页同步
+            if (Math.abs(st.page - otherSt.page) >= 1) {
+                otherSt.page = st.page;
+                pdfGoToPage(otherFrame, st.page);
+            }
+
+            // 2. 缩放同步 (Chromium zoom 是枚举: 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4)
+            if (Math.abs(st.zoom - otherSt.zoom) > 0.01) {
+                otherSt.zoom = st.zoom;
+                pdfSetZoom(otherFrame, st.zoom);
+            }
+
+            // 3. 滚动位置同步 (用户滚一边 → 另一边同步滚)
+            // Chromium PDF viewer 的滚动在 #viewer-scroll 容器里 (不是 contentWindow)
+            // 但 postMessage 没直接提供 scroll 设置, 我们通过 DOM 操作
+            if (Math.abs(st.scrollY - otherSt.scrollY) > 20) {
+                try {
+                    const doc = otherFrame.contentDocument;
+                    if (doc) {
+                        // 路径 A: Chromium 原生 viewer 的滚动容器 #viewer-scroll
+                        const viewerScroll = doc.querySelector('#viewer-scroll, [id*="viewer-scroll"], .pdf-viewer, .scroll-container');
+                        if (viewerScroll) {
+                            viewerScroll.scrollTop = st.scrollY;
+                        } else {
+                            // 路径 B: 直接 contentWindow.scrollTo
+                            otherFrame.contentWindow?.scrollTo({ top: st.scrollY, behavior: 'auto' });
+                        }
+                    }
+                } catch(e) {
+                    // cross-origin 或 DOM 不匹配, 忽略
+                }
+            }
+
+            // 加锁 50ms 防止递归
+            V.lockUntil = Date.now() + 50;
+        }
+    }
+});
+
+// ── iframe onload: 请求初始状态 ──
+function _onPdfFrameLoad(frame, which) {
+    // 请求 viewer 发初始状态
+    _sendPdfCmd(frame, { type: 'getViewerPreferences' });
+    _sendPdfCmd(frame, { type: 'requestViewport' });
+    // 有些 viewer 不响应, 等 ready 超时后标记
+    setTimeout(() => {
+        if (!V[which].ready) {
+            V[which].ready = true;  // 标记 ready (哪怕没收到 update)
+            // 读 contentWindow.hash 作为 fallback
+            try {
+                const h = frame.contentWindow?.location.hash || frame.src.split('#')[1] || '';
+                const m = h.match(/page=(\d+)/);
+                if (m) V[which].page = parseInt(m[1]);
+            } catch(e) {}
+        }
+    }, 2000);
+}
+
+// ── 设置 iframe (保持 hash fallback + 自动请求 postMessage 状态) ──
+function setPdfFrame(url, frame) {
+    if (!url) return;
+    const which = frame === leftFrame ? 'left' : 'right';
+    V[which].ready = false;
+    V[which].page = 1;
+    leftEmpty.classList.add('hidden');
+    rightEmpty?.classList.add('hidden');
+    frame.onload = () => _onPdfFrameLoad(frame, which);
+    frame.src = url.split('#')[0] + '#page=1&zoom=FitW&pagemode=none';
+    frame.classList.remove('hidden');
+}
+
+function clearPdfFrame(frame) {
+    if (frame) { frame.src = 'about:blank'; frame.classList.add('hidden'); }
+}
+
+// ── 用户操作 → 谁是 master ──
+[leftFrame, rightFrame].forEach(f => {
+    f.addEventListener('mousedown', () => { V.master = f === leftFrame ? 'left' : 'right'; });
+    f.addEventListener('wheel', () => { V.master = f === leftFrame ? 'left' : 'right'; }, {passive: true});
+    f.addEventListener('keydown', () => { V.master = f === leftFrame ? 'left' : 'right'; });
+});
+
+// ── 翻页按钮 (改为主控当前 master 的 iframe) ──
+function goToPage(page) {
+    if (!page || page < 1) return;
+    pdfGoToPage(leftFrame, page);
+    pdfGoToPage(rightFrame, page);
+}
+function nextPage() {
+    const p = V.left.page || V.right.page || 1;
+    goToPage(p + 1);
+}
+function prevPage() {
+    const p = V.left.page || V.right.page || 1;
+    if (p > 1) goToPage(p - 1);
+}
+
+function _updatePageDisplay() {
+    // 有 postMessage update 时会自动更新, 这里做 hash fallback
+}
+
+// ── 绑定翻页按钮 ──
+$('leftPrev').onclick = () => { V.master = 'left'; prevPage(); };
+$('leftNext').onclick = () => { V.master = 'left'; nextPage(); };
+$('rightPrev').onclick = () => { V.master = 'right'; prevPage(); };
+$('rightNext').onclick = () => { V.master = 'right'; nextPage(); };
+
+// ── src 变化检测 (hash fallback, 兼容非 Chromium) ──
+setInterval(() => {
+    // 如果 postMessage 已经在工作, 就不做 hash 轮询
+    if (V.usingPostMessage && (V.left.ready || V.right.ready)) {
+        // 但要补充读 scrollY (Chromium update 可能不带)
+        for (const which of ['left', 'right']) {
+            const f = which === 'left' ? leftFrame : rightFrame;
+            try {
+                let y = f.contentWindow?.scrollY ?? 0;
+                if (!y) {
+                    const doc = f.contentDocument;
+                    if (doc) {
+                        const el = doc.querySelector('#viewer-scroll, [id*="viewer-scroll"], .pdf-viewer');
+                        if (el) y = el.scrollTop;
+                    }
+                }
+                if (Math.abs(y - V[which].scrollY) > 20) {
+                    V[which].scrollY = y;
+                    // 如果 master 在这边, 同步到另一边
+                    if (V.master === which && Date.now() > V.lockUntil) {
+                        const other = which === 'left' ? 'right' : 'left';
+                        const otherF = which === 'left' ? rightFrame : leftFrame;
+                        try {
+                            const otherDoc = otherF.contentDocument;
+                            if (otherDoc) {
+                                const vs = otherDoc.querySelector('#viewer-scroll, [id*="viewer-scroll"], .pdf-viewer');
+                                if (vs) { vs.scrollTop = y; }
+                                else { otherF.contentWindow?.scrollTo({ top: y }); }
+                                V[other].scrollY = y;
+                                V.lockUntil = Date.now() + 50;
+                            }
+                        } catch(e) {}
+                    }
+                }
+            } catch(e) {}
+        }
+        return;
+    }
+    // 纯 hash fallback
+    try {
+        function pageOf(frame) {
+            const h = frame.contentWindow?.location.hash || frame.src.split('#')[1] || '';
+            const m = h.match(/page=(\d+)/);
+            return m ? parseInt(m[1]) : 0;
+        }
+        const lp = pageOf(leftFrame), rp = pageOf(rightFrame);
+        if (lp !== rp && lp > 0 && rp > 0) {
+            const base = (lp > rp ? rightFrame : leftFrame).src.split('#')[0];
+            const target = lp > rp ? lp : rp;
+            const other = lp > rp ? rightFrame : leftFrame;
+            other.src = `${base}#page=${target}&zoom=FitW&pagemode=none`;
+        }
+        if (lp > 0) leftPage.textContent = lp + ' / —';
+        if (rp > 0) rightPage.textContent = rp + ' / —';
+    } catch(e) {}
+}, 500);
+
+// ── 键盘翻页 ──
+document.addEventListener('keydown', e => {
+    if (['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if (e.key === 'PageDown') { e.preventDefault(); nextPage(); }
+    else if (e.key === 'PageUp') { e.preventDefault(); prevPage(); }
+    else if (e.key === 'Home') { e.preventDefault(); goToPage(1); }
+});
+
+// ── 缩放按钮 (通过 postMessage) ──
+const ZMIN = 60, ZMAX = 300, ZSTEP = 10;
+function _applyZoom(pct) {
+    S.iframeZoom = pct;
+    leftZoom.textContent = pct + '%';
+    rightZoom.textContent = pct + '%';
+    const z = Math.round(pct / 100 * 100) / 100;
+    // Chromium zoom 是枚举值, 找最近的: 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4
+    const enums = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+    let closest = enums[0];
+    for (const e of enums) { if (Math.abs(e - z) < Math.abs(closest - z)) closest = e; }
+    pdfSetZoom(leftFrame, closest);
+    pdfSetZoom(rightFrame, closest);
+}
+$('zoomLeftIn').onclick = () => _applyZoom(Math.min(ZMAX, S.iframeZoom + ZSTEP));
+$('zoomLeftOut').onclick = () => _applyZoom(Math.max(ZMIN, S.iframeZoom - ZSTEP));
+$('zoomLeftReset').onclick = () => _applyZoom(140);
+$('zoomRightIn').onclick = () => _applyZoom(Math.min(ZMAX, S.iframeZoom + ZSTEP));
+$('zoomRightOut').onclick = () => _applyZoom(Math.max(ZMIN, S.iframeZoom - ZSTEP));
+$('zoomRightReset').onclick = () => _applyZoom(140);
+
+// Ctrl+Wheel 缩放 (劫持 iframe wheel → 统一 postMessage)
+[leftFrame, rightFrame].forEach(f => {
+    f.addEventListener('wheel', e => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            V.master = f === leftFrame ? 'left' : 'right';
+            const d = e.deltaY < 0 ? ZSTEP : -ZSTEP;
+            _applyZoom(Math.max(ZMIN, Math.min(ZMAX, S.iframeZoom + d)));
+        }
+    }, {passive: false});
+});
+
+// ── 文件选择 + 拖拽 ──
+document.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation();
+    if (e.dataTransfer?.files?.length) handleFile(e.dataTransfer.files[0]);
+});
+document.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
+document.addEventListener('dragleave', e => { e.preventDefault(); });
+if (input) {
+    input.addEventListener('change', () => {
+        if (input.files?.length) handleFile(input.files[0]);
+    });
+}
+if (leftEmpty) {
+    leftEmpty.addEventListener('click', () => input?.click());
+}
+
+// ── 快捷键 ──
+document.addEventListener('keydown', e => {
+    if (['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+') { e.preventDefault(); setIframeZoom(Math.min(ZMAX, S.iframeZoom + ZSTEP)); }
+        else if (e.key === '-') { e.preventDefault(); setIframeZoom(Math.max(ZMIN, S.iframeZoom - ZSTEP)); }
+        else if (e.key === '0') { e.preventDefault(); setIframeZoom(140); }
+    }
+});
+
+// ── 分割线 ──
+(function initDivider() {
+    const divider = $('divider'), lp = $('leftPane'), rp = $('rightPane'), app = document.querySelector('.app');
+    let dragging = false;
+    divider.addEventListener('mousedown', e => {
+        dragging = true; divider.classList.add('active');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const rect = app.getBoundingClientRect();
+        const pct = ((e.clientX - rect.left) / rect.width) * 100;
+        const lpct = Math.max(15, Math.min(85, pct));
+        lp.style.flex = '0 0 ' + lpct + '%';
+        rp.style.flex = '0 0 ' + (100 - lpct) + '%';
+    });
+    document.addEventListener('mouseup', () => {
+        if (dragging) { dragging = false; divider.classList.remove('active');
+            document.body.style.cursor = ''; document.body.style.userSelect = ''; }
+    });
+})();
+
+// ── 下载按钮 (radio 单选: mono / dual / both) ──
+function _triggerDownload(url) {
+    if (!url) return false;
+    const a = document.createElement('a');
+    a.href = url; a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return true;
+}
+downloadBtn.addEventListener('click', () => {
+    const fmt = document.querySelector('input[name="dlFmt"]:checked')?.value || 'mono';
+    const mono = S.currentMonoUrl;
+    const dual = S.currentDualUrl;
+
+    if (fmt === 'mono') {
+        if (!_triggerDownload(mono)) alert('中文版暂未生成');
+    } else if (fmt === 'dual') {
+        if (!_triggerDownload(dual)) alert('双语对照版暂未生成');
+    } else {  // both
+        let ok = false;
+        if (mono) { _triggerDownload(mono); ok = true; }
+        setTimeout(() => {
+            if (dual) { _triggerDownload(dual); ok = true; }
+            if (!ok) alert('暂无可下载的译版');
+        }, 400);
+    }
+});
+
+// ── 进度轮 ──
+function updateProgressRing(pct) {
+    const fg = document.querySelector('.progress-ring .fg');
+    if (fg) {
+        const PROG_CIRC = 201.1;
+        fg.style.strokeDashoffset = PROG_CIRC - (PROG_CIRC * pct / 100);
+    }
+}
+
+// ── BabelDOC stage → 4 大阶段映射 ──
+function _stageGroup(stage) {
+    const P  = ['Parse PDF and Create IR','DetectScannedFile','Parse Page Layout','Parse Table','Parse Paragraphs','Parse Formulas and Styles'];
+    const T  = ['Translate Paragraphs'];
+    const Ty = ['Typesetting','Add Fonts','Generate drawing instructions'];
+    const O  = ['Subset font','Save PDF'];
+    if (P.includes(stage))  return 'parse';
+    if (T.includes(stage))  return 'translate';
+    if (Ty.includes(stage)) return 'typeset';
+    if (O.includes(stage))  return 'output';
+    return null;
+}
+function _updateStageBars(stageProgresses, currentStage) {
+    // 聚合每个大阶段的进度
+    const groups = { parse: [], translate: [], typeset: [], output: [] };
+    if (stageProgresses) {
+        for (const [st, p] of Object.entries(stageProgresses)) {
+            const g = _stageGroup(st);
+            if (g) groups[g].push(p);
+        }
+    }
+    // 算每个大阶段的 max 进度 (只要组内任一 stage 完成就算 done)
+    const totals = {};
+    for (const [g, arr] of Object.entries(groups)) {
+        totals[g] = arr.length ? Math.max(...arr) : 0;
+    }
+    // 更新 DOM
+    document.querySelectorAll('.stage-bar-row').forEach(row => {
+        const g = row.dataset.stage;
+        const pct = Math.round(totals[g] || 0);
+        const fill = row.querySelector('.s-fill');
+        const pctEl = row.querySelector('.s-pct');
+        fill.style.width = pct + '%';
+        pctEl.textContent = pct + '%';
+        row.classList.remove('active', 'done');
+        const rowGroup = _stageGroup(currentStage);
+        if (pct >= 100) row.classList.add('done');
+        else if (g === rowGroup && pct > 0) row.classList.add('active');
+    });
+}
+function _resetStageBars() {
+    document.querySelectorAll('.stage-bar-row').forEach(row => {
+        row.querySelector('.s-fill').style.width = '0%';
+        row.querySelector('.s-pct').textContent = '0%';
+        row.classList.remove('active', 'done');
+    });
+}
+
+
+// ── 主入口: handleFile ──
+async function handleFile(file) {
+    if (!file.name.toLowerCase().endsWith('.pdf')) return;
+
+    S.currentName = file.name;
+    chipName.textContent = file.name;
+    chip.classList.add('show');
+    downloadOpts.classList.add('hidden');
+
+    // 重置 UI
+    leftEmpty.classList.add('hidden');
+    leftStatus.textContent = '检测中...';
+    rightEmpty.classList.add('hidden');
+    loadingWrap.classList.remove('hidden');
+    rightStatus.textContent = '';
+    rightDot.style.background = 'var(--muted)';
+    pctNum.textContent = '0';
+    loadMsg.textContent = '准备中...';
+    uploadBar.style.display = 'none';
+    _resetStageBars();
+
+    // 1) 查缓存
+    try {
+        const cr = await fetch('/api/check', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({name: file.name}),
+        }).then(r => r.json());
+        if (cr.exists) {
+            // 命中 → 跳过 upload 的轮询阶段, upload 会秒返回 done
+            console.log('📦 Cache hit, uploading original...');
+        }
+    } catch(e) { /* check may not exist */ }
+
+    // 2) 上传
+    try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const r = await fetch('/api/upload', {method: 'POST', body: fd});
+        const data = await r.json();
+        if (r.ok) {
+            S.onReadyLeft = data.original_url;
+            setPdfFrame(data.original_url, leftFrame);
+            leftStatus.textContent = '已加载';
+            // 缓存命中 → upload 直接返回 done
+            if (data.cache_hit || data.status === 'done') {
+                S.currentMonoUrl = data.mono_url;
+                S.currentDualUrl = data.dual_url;
+                if (data.mono_url) setPdfFrame(data.mono_url, rightFrame);
+                rightStatus.textContent = '已翻译 (缓存)';
+                loadingWrap.classList.add('hidden');
+                if (data.mono_url) downloadOpts.classList.remove('hidden');
+                console.log('✅ Cache hit! Skip queue.');
+            } else if (data.job_id) {
+                S.currentJobId = data.job_id;
+                startPoll(data.job_id);
+            }
+        }
+    } catch(e) {
+        pctNum.textContent = '❌';
+        loadMsg.textContent = '上传失败';
+    }
+}
+
+// ── 轮询进度 ──
+function startPoll(jobId) {
+    if (S.pollingCtrl) S.pollingCtrl.abort();
+    S.pollingCtrl = new AbortController();
+    const signal = S.pollingCtrl.signal;
+    let interval = 1500;
+    let consecutiveFail = 0;
+
+    async function poll() {
+        try {
+            const r = await fetch('/api/status/' + jobId, {signal});
+            if (!r.ok) throw new Error(r.status);
+            const d = await r.json();
+            consecutiveFail = 0;
+            interval = 1500;
+
+            // 更新进度
+            updateProgressRing(d.progress || 0);
+            pctNum.textContent = d.progress + '%';
+            loadMsg.textContent = d.message || '处理中...';
+            _updateStageBars(d.stage_progresses || {}, d.current_stage || '');
+
+            // 队列位置
+            if (d.status === 'queued') {
+                pctNum.textContent = d.queue_position || '?';
+                loadMsg.textContent = `前方 ${(d.queue_position||1)-1} 个任务 · 排队中`;
+            }
+
+            // 翻译中
+            if (d.status === 'translating') {
+                rightStatus.textContent = '翻译中';
+            }
+
+            // 完成
+            if (d.status === 'done') {
+                updateProgressRing(100);
+                pctNum.textContent = '100';
+                loadMsg.textContent = '完成';
+                rightStatus.textContent = '完成';
+                rightDot.style.background = '#4CAF50';
+                loadingWrap.classList.add('hidden');
+                S.currentMonoUrl = d.mono_url;
+                S.currentDualUrl = d.dual_url;
+                if (d.mono_url) setPdfFrame(d.mono_url, rightFrame);
+                downloadOpts.classList.remove('hidden');
+                return; // 停止轮询
+            }
+
+            // 失败
+            if (d.status === 'failed') {
+                pctNum.textContent = '❌';
+                loadMsg.textContent = '失败: ' + (d.error || d.message);
+                rightStatus.textContent = '错误';
+                rightDot.style.background = '#f44336';
+                loadingWrap.classList.add('hidden');
+                return;
+            }
+        } catch(e) {
+            if (signal.aborted) return;
+            consecutiveFail++;
+            interval = Math.min(interval * 1.3, 8000);
+        }
+
+        if (!signal.aborted)
+            setTimeout(poll, interval);
+    }
+    poll();
+}
+
+// ── 重置 ──
+chipClose.addEventListener('click', () => {
+    if (S.pollingCtrl) S.pollingCtrl.abort();
+    S.currentName = S.currentJobId = S.currentMonoUrl = null;
+    chip.classList.remove('show');
+    downloadOpts.classList.add('hidden');
+    leftEmpty.classList.remove('hidden');
+    rightEmpty.classList.remove('hidden');
+    clearPdfFrame(leftFrame);
+    clearPdfFrame(rightFrame);
+    loadingWrap.classList.add('hidden');
+});
+
+// ── 网络状态 ──
+window.addEventListener('online', () => document.querySelector('.net-alert')?.classList.remove('show'));
+window.addEventListener('offline', () => document.querySelector('.net-alert')?.classList.add('show'));
+
+console.log('GeoTranslate UI ready ✅');
+</script>
+</body>
+</html>

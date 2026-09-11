@@ -1,0 +1,65 @@
+﻿# ═══════════════════════════════════════════
+# 默认全忽略，白名单核心文件
+# ═══════════════════════════════════════════
+
+# ── 先忽略一切 ──
+/*
+
+# ── 必须忽略的大目录（写在 !目录 后面也会生效）──
+/models-gguf/
+/llama-cpp/
+/NVIDIA Corporation/
+/pycdc/
+/translated/
+/uploads/
+/_ab*/
+/_fm*/
+/_font*/
+/_profile*/
+/_test*/
+/__pycache__/
+/.trae/
+/.workbuddy/
+
+# ── 垃圾文件 ──
+*.log
+*.txt
+*.jsonl
+*.bak*
+*.tmp
+*.pid
+*.pyc
+*.pyo
+Thumbs.db
+.DS_Store
+
+# ── 下面才是要进仓库的 ──
+# Python 核心
+!/babeldoc_translator.py
+!/llama_http_engine.py
+!/llama_cli_engine.py
+!/run_babeldoc.py
+!/web_app.py
+!/index.html
+
+# 术语库
+!/geology_terms*.json
+!/geo_terms*.json
+!/geogpt_terms*.json
+!/geo_terms_final.json
+
+# 启动脚本
+!/start_*.bat
+
+# 模型清单
+!/models_archive_MANIFEST.json
+
+# 常用工具
+!/_probe_stats.py
+!/_probe.py
+!/translate_pdf.py
+!/translate_queue.py
+
+# Git 自身
+!.gitignore
+!.gitattributes
