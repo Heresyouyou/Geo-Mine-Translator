@@ -166,7 +166,7 @@ def start_server(model_path=None, port=SERVER_PORT,
         "-cb",
         "--parallel", str(N_PARALLEL),
         "--kv-unified",
-        "--cache-prompt",
+        "--cache-prompt", "--reasoning", "off",
         "--cache-idle-slots",
         "--host", "127.0.0.1",
         "--port", str(port),
@@ -407,6 +407,7 @@ def ensure_server_ready(model_path=None) -> bool:
 # ── CLI 入口 ──
 if __name__ == "__main__":
     start_server()
+
 
 
 
