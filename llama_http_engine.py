@@ -283,22 +283,48 @@ class LlamaBatchEngine:
             text: 要翻译的文本
             max_tokens: 最大生成 token (None=自动算)
             _depth: 递归深度 (内部用, 防无限切分)
+
+        Fix v4 (2026-09-12):
+          - auto-split 递归不再硬 cap 512, 改为 1500, 解决 2000 chars 学术文本截断问题
+          - 总 cap 1024 → 1500 (ctx=16384, src<=5000 时安全)
+          - 检测 References 上下文 → 按 (author, year) 条目切, 避免条目被截断
         """
         if not text or len(text.strip()) < 2:
             return text
 
-        # ═══ Fix 1a: 巨长段自动切分成段落 ═══
-        # N_CTX=16384, 真实安全区 ≈ src*0.5 + max_tokens + overhead ≤ 12000
-        # src>2500 时 prompt_tokens ≈ 2000, 留 1024 给 gen → 3024, 安全
-        # 但 src>3500 就开始逼近了, src>4700 必炸 500
+        # ── Fix: References 条目检测 ──
+        _is_refs = "references" in text[:200].lower() or bool(
+            re.search(r"\([12]\d{3}\)", text[:500]) and "(" in text[:200]
+        )
+        _ref_entry_re = re.compile(r'(?=\b[A-Z][a-z]+\s+[A-Z]\b.*?\([12]\d{3}\))')
+
+        # ═══ 巨长段自动切分成段落 / Reference 条目 ═══
+        # N_CTX=16384, 生成安全区 = ctx - prompt - 500m
+        # src≤5000: prompt ≈ 500 + src/3 → safe completion = 16384 - 500 - src/3 - 500 ≥ 12700
+        # 学术文本: 英→中 ≈ 0.7× 原长, token ≈ 1.5/char → 2000 src → 1400 Chinese → 2100 tokens needed
+        # 保守给 1500 max_tokens, 够大部分参考文献
         if _depth < 3 and len(text) > 2500:
+            # References → 按条目切 (每个 entry ~300-1400 chars)
+            if _is_refs:
+                _entries = [e.strip() for e in _ref_entry_re.split(text)
+                           if len(e.strip()) > 30]
+                if len(_entries) > 1:
+                    self._stats.setdefault("ref_splits", 0)
+                    self._stats["ref_splits"] += 1
+                    return "".join(
+                        self.translate(e, max_tokens=min(1500, max(128, int(len(e) * 0.8) + 80)),
+                                       _depth=_depth + 1)
+                        for e in _entries if e.strip()
+                    )
+
+            # 普通长段 → 按段落/句子切 (chunk=2000)
             parts = self._split_text(text, max_chunk=2000)
             if len(parts) > 1:
                 self._stats.setdefault("auto_splits", 0)
                 self._stats["auto_splits"] += 1
-                # 递归翻每个子块, 用更紧的 max_tokens
+                # 递归翻每个子块 — cap 提升到 1500 (之前 512 导致严重截断!)
                 return "".join(
-                    self.translate(p, max_tokens=min(512, max(128, int(len(p) * 0.6) + 60)),
+                    self.translate(p, max_tokens=min(1500, max(128, int(len(p) * 0.8) + 80)),
                                    _depth=_depth + 1)
                     for p in parts if p.strip()
                 )
@@ -307,36 +333,38 @@ class LlamaBatchEngine:
 
         _src_chars = len(text.strip())
 
-        # ── 术语注入 ──
+        # ── 术语注入 (v4: 放到 SYSTEM prompt, 不再污染 USER message) ──
         _gloss, _nhit = "", 0
         if self.terms:
             _hits = self.terms.match(text)
             if _hits:
                 _nhit = len(_hits)
-                _gloss = TERM_INJECT_PREFIX + self.terms.render(_hits) + "\n"
+                # 放到 system prompt 里当指令, 绝对不能放 user message 当正文!
+                _gloss = (f"\n\n术语对照(硬约束, 必须采用): {self.terms.render(_hits)}"
+                         f"\n翻译时遇到这些术语必须用对应的中文, 禁止输出术语表本身!")
                 self._stats["term_hits"] += _nhit
                 self._stats["term_segments"] += 1
-        _gloss_tokens = len(_gloss) // 3
 
-        # ── 动态 max_tokens (Fix 1c: cap=1024, 绝不碰 2048) ──
+        # ── 动态 max_tokens (v4: cap=1500, ctx=16384 够放 src≤5000 的) ──
         if max_tokens is None:
-            _est_prompt = int(_src_chars * 0.5) + 800 + _gloss_tokens
+            _est_prompt = int(_src_chars * 0.5) + 800 + len(_gloss) // 3
             _safe_cap = CTX_PER_SLOT - _est_prompt - 500
             _calc = int(_src_chars * 0.8) + 80
-            max_tokens = min(1024, max(128, min(_calc, max(128, _safe_cap))))
+            max_tokens = min(1500, max(128, min(_calc, max(128, _safe_cap))))
 
-        # ── 构造消息 ──
+        # ── 构造消息 (术语表移到 system prompt, user message 只放要翻译的文本) ──
+        _dyn_system = SYSTEM_PROMPT + _gloss
         if _src_chars < 100:
-            _user_msg = (f"{_gloss}Translate this English text to concise Chinese. "
+            _user_msg = (f"Translate this English text to concise Chinese. "
                         f"Keep it short but complete. Output ONLY the Chinese translation:\n"
                         f"{text.strip()}")
         else:
-            _user_msg = f"{_gloss}{text.strip()}"
+            _user_msg = text.strip()
 
         payload = {
             "model": "default",
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": _dyn_system},
                 {"role": "user", "content": _user_msg},
             ],
             "max_tokens": max_tokens,
@@ -367,7 +395,7 @@ class LlamaBatchEngine:
                         parts = self._split_text(text, max_chunk=len(text) // 2)
                         if len(parts) > 1:
                             return "".join(
-                                self.translate(p, max_tokens=512, _depth=_depth + 1)
+                                self.translate(p, max_tokens=1024, _depth=_depth + 1)
                                 for p in parts if p.strip()
                             )
 
@@ -401,7 +429,7 @@ class LlamaBatchEngine:
                     parts = self._split_text(text, max_chunk=len(text) // 2)
                     if len(parts) > 1:
                         return "".join(
-                            self.translate(p, max_tokens=512, _depth=_depth + 1)
+                            self.translate(p, max_tokens=1024, _depth=_depth + 1)
                             for p in parts if p.strip()
                         )
 
@@ -503,6 +531,7 @@ def ensure_server_ready(model_path=None) -> bool:
 # ── CLI 入口 ──
 if __name__ == "__main__":
     start_server()
+
 
 
 
