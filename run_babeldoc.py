@@ -1,4 +1,4 @@
-﻿"""run_babeldoc.py — 翻译入口 (CLI + web_app 共用)
+"""run_babeldoc.py — 翻译入口 (CLI + web_app 共用)
 
 BabelDOC v2 API: TranslationConfig 对象 → hl.translate(config)
 签名: translate_pdf(pdf_path, output_dir, progress_callback=None, no_dual=True, no_mono=False)
@@ -200,6 +200,7 @@ def translate_pdf(pdf_path, output_dir=None, doc_layout_model=None,
             watermark_output_mode=WatermarkOutputMode.NoWatermark,  # ← 省 ~1min
             enhance_compatibility=False,            # ← 已设 False, 显式声明
             qps=4,                                    # ← 和 GATE=N_PARALLEL 对齐, 零排队
+            disable_rich_text_translate=True,          # ← 不拆蓝色超链接/彩色文字!
             # progress_monitor 参数传了也没用, hl.translate 会忽略它
         )
 
