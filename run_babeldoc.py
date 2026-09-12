@@ -114,7 +114,7 @@ def translate_pdf(pdf_path, output_dir=None, doc_layout_model=None,
     # rate_limiter 必须 >= LlamaBatchEngine._GATE (N_PARALLEL=4)
     # 设为 4: BabelDOC 最多开 4 并发, 刚好填满 llama-server 4 slot, 零排队
     # 之前 16 > 8: BabelDOC 开太多线程, 大量 segment 在 LlamaBatchEngine._GATE 前排队雪崩
-    set_translate_rate_limiter(4)  # 关闭 - 让 GATE 全权控制并发  # 4 QPS 每秒慢慢流, 不让 217 个同时抢 GATE ≈ 不关 GATE, 让 LlamaBatchEngine._GATE 管并发
+    set_translate_rate_limiter(9999)  # 关掉 BabelDOC QPS 节流 — 让 LlamaBatchEngine._GATE 全权控制并发
 
     translator = GeoBabelTranslator(lang_in, lang_out, ignore_cache=True)  # True=每次调LLM, False=命中SQLite持久缓存
     doc_layout = doc_layout_model if doc_layout_model is not None else DocLayoutModel.load_available()
@@ -199,7 +199,7 @@ def translate_pdf(pdf_path, output_dir=None, doc_layout_model=None,
             table_model=None,                       # ← 显式关 OCR (rapidocr) — 已默认
             watermark_output_mode=WatermarkOutputMode.NoWatermark,  # ← 省 ~1min
             enhance_compatibility=False,            # ← 已设 False, 显式声明
-            qps=4,                                    # ← 和 GATE=N_PARALLEL 对齐, 零排队
+            qps=10,                                    # ← 和 GATE=N_PARALLEL 对齐, 零排队
             # progress_monitor 参数传了也没用, hl.translate 会忽略它
         )
 
@@ -255,6 +255,10 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+
 
 
 
