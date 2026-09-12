@@ -1,0 +1,1 @@
+$(Get-Content README.md -Raw)
