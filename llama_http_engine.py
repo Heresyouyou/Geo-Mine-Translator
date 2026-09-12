@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 llama-server HTTP 引擎 — Qwen3.5-4B-Q4_K_M @ RTX 4060 8GB
 
@@ -276,10 +276,32 @@ class LlamaBatchEngine:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
         except: pass
 
-    def translate(self, text: str, max_tokens: int = None) -> str:
-        """翻译单段"""
+    def translate(self, text: str, max_tokens: int = None, _depth: int = 0) -> str:
+        """翻译单段 — 支持巨长段自动切分 + ctx 溢出降级
+
+        Args:
+            text: 要翻译的文本
+            max_tokens: 最大生成 token (None=自动算)
+            _depth: 递归深度 (内部用, 防无限切分)
+        """
         if not text or len(text.strip()) < 2:
             return text
+
+        # ═══ Fix 1a: 巨长段自动切分成段落 ═══
+        # N_CTX=16384, 真实安全区 ≈ src*0.5 + max_tokens + overhead ≤ 12000
+        # src>2500 时 prompt_tokens ≈ 2000, 留 1024 给 gen → 3024, 安全
+        # 但 src>3500 就开始逼近了, src>4700 必炸 500
+        if _depth < 3 and len(text) > 2500:
+            parts = self._split_text(text, max_chunk=2000)
+            if len(parts) > 1:
+                self._stats.setdefault("auto_splits", 0)
+                self._stats["auto_splits"] += 1
+                # 递归翻每个子块, 用更紧的 max_tokens
+                return "".join(
+                    self.translate(p, max_tokens=min(512, max(128, int(len(p) * 0.6) + 60)),
+                                   _depth=_depth + 1)
+                    for p in parts if p.strip()
+                )
 
         self._ensure_alive()
 
@@ -296,12 +318,12 @@ class LlamaBatchEngine:
                 self._stats["term_segments"] += 1
         _gloss_tokens = len(_gloss) // 3
 
-        # ── 动态 max_tokens ──
+        # ── 动态 max_tokens (Fix 1c: cap=1024, 绝不碰 2048) ──
         if max_tokens is None:
             _est_prompt = int(_src_chars * 0.5) + 800 + _gloss_tokens
             _safe_cap = CTX_PER_SLOT - _est_prompt - 500
             _calc = int(_src_chars * 0.8) + 80
-            max_tokens = min(2048, max(128, min(_calc, max(128, _safe_cap))))
+            max_tokens = min(1024, max(128, min(_calc, max(128, _safe_cap))))
 
         # ── 构造消息 ──
         if _src_chars < 100:
@@ -337,6 +359,18 @@ class LlamaBatchEngine:
 
                 if r.status_code != 200:
                     err = r.text[:200]
+
+                    # ═══ Fix 1b: Context size exceeded → 切两半重试 ═══
+                    if "Context size has been exceeded" in err and _depth < 3:
+                        self._stats.setdefault("ctx_overflow_splits", 0)
+                        self._stats["ctx_overflow_splits"] += 1
+                        parts = self._split_text(text, max_chunk=len(text) // 2)
+                        if len(parts) > 1:
+                            return "".join(
+                                self.translate(p, max_tokens=512, _depth=_depth + 1)
+                                for p in parts if p.strip()
+                            )
+
                     self._probe(status="http_error", http_status=r.status_code,
                                src_len=_src_chars, gate_wait_ms=_gate_wait_ms, error=err)
                     raise RuntimeError(f"llama-server HTTP {r.status_code}: {err}")
@@ -359,10 +393,72 @@ class LlamaBatchEngine:
 
             except Exception as e:
                 comm_ms = (time.time() - t0) * 1000
+
+                # ═══ Fix 1b 兜底: 任何异常 + 长段 → 切两半再试 ═══
+                if _depth < 3 and _src_chars > 1500:
+                    self._stats.setdefault("err_fallback_splits", 0)
+                    self._stats["err_fallback_splits"] += 1
+                    parts = self._split_text(text, max_chunk=len(text) // 2)
+                    if len(parts) > 1:
+                        return "".join(
+                            self.translate(p, max_tokens=512, _depth=_depth + 1)
+                            for p in parts if p.strip()
+                        )
+
                 self._probe(status="error", src_len=_src_chars,
                             gate_wait_ms=round(_gate_wait_ms, 0),
                             comm_ms=round(comm_ms, 0), error=str(e)[:200])
                 raise
+
+    @staticmethod
+    def _split_text(text: str, max_chunk: int = 2000) -> list:
+        """按段落/句子切分长文本, 优先尊重段落边界
+
+        策略: \n\n 分段 → 段过长按句号分 → 还过长硬切
+        """
+        text = text.strip()
+        if len(text) <= max_chunk:
+            return [text]
+
+        result = []
+        # 1) 按 \n\n (段落) 分
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+
+        buf = ""
+        for para in paragraphs:
+            if len(buf) + len(para) + 2 <= max_chunk:
+                buf = (buf + "\n\n" + para).strip()
+            else:
+                if buf:
+                    result.append(buf)
+                    buf = ""
+
+                # 段落本身就超长 → 按句子切
+                if len(para) > max_chunk:
+                    sentences = re.split(r'(?<=[.!?])\s+', para)
+                    sent_buf = ""
+                    for sent in sentences:
+                        if len(sent_buf) + len(sent) + 1 <= max_chunk:
+                            sent_buf = (sent_buf + " " + sent).strip()
+                        else:
+                            if sent_buf:
+                                result.append(sent_buf)
+                            # 单句超长 → 硬切
+                            if len(sent) > max_chunk:
+                                for i in range(0, len(sent), max_chunk):
+                                    result.append(sent[i:i + max_chunk])
+                                sent_buf = ""
+                            else:
+                                sent_buf = sent
+                    if sent_buf:
+                        buf = sent_buf
+                else:
+                    buf = para
+
+        if buf:
+            result.append(buf)
+
+        return result
 
     def average_tps(self) -> float:
         """平均生成速度 (从 probe 数据)"""
